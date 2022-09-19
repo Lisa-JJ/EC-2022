@@ -13,7 +13,7 @@ experiment_name = 'dummy_demo'
 if not os.path.exists(experiment_name):
     os.makedirs(experiment_name)
 
-print('Hello')
+print('Hello Lena')
 
 # initializes environment with ai player using random controller, playing against static enemy
 env = Environment(experiment_name=experiment_name)
