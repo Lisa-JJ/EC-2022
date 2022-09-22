@@ -15,6 +15,13 @@ import glob, os
 import random
 import heapq
 
+# multiprocessing
+import concurrent.futures 
+import multiprocessing
+import concurrent.futures
+from tkinter import E
+
+
 # COPIED!!!
 # choose this for not using visuals and thus making experiments faster
 headless = True
@@ -22,7 +29,8 @@ if headless:
     os.environ["SDL_VIDEODRIVER"] = "dummy"
 # COPIED!!!
 
-experiment_name = 'tournament_wholeArithmetic_Nonuniform_roundRobin'
+# experiment_name = 'EA2_dynamicCMrate_enemy1'
+experiment_name = 'tournament_wholeArithmetic_Nonuniform_roundRobin_enemy3'
 if not os.path.exists(experiment_name):
     os.makedirs(experiment_name)
 
@@ -32,7 +40,7 @@ hidden_notes = 5
 # initializes environment with ai player using random controller, playing against static enemy
 # COPIED!!!
 env = Environment(experiment_name=experiment_name,
-                  enemies=[2],
+                  enemies=[3],
                   playermode="ai",
                   player_controller=player_controller(hidden_notes),
                   enemymode="static",
@@ -44,25 +52,6 @@ ini = time.time()  # sets time marker
 run_mode = 'train'
 # COPIED!!!
 
-
-
-last_best = 0
-# Set necessary parameters
-observation_space = env.get_num_sensors()
-bias = 1
-action_space = 5
-chromosome_length = (observation_space + bias)*hidden_notes + (hidden_notes + bias)*action_space
-generations = 5                    # lecturer mentioned >= 30
-population_size = 100                # change accordingly
-lower_bound_weights = -1            # change accordingly
-upper_bound_weights = 1             # change accordingly
-recombination_probability = 0.5     # change accordingly
-mutation_probability = 0.1          # change accordingly
-mutation_std = 1                  # change accordingly
-mating_pool_size = 10               # goes in dependency with population_size
-mating_tournament_sample_size = 5   # the higher the higher the selection pressure
-survivor_tournament_sample_size = 10 # 10 typical value
-
 # SAME AS IN CODE PROVIDED
 def population_initialisation(lower_bound_weights, upper_bound_weights, population_size, chromosome_length):
     return np.random.uniform(lower_bound_weights, upper_bound_weights, (population_size, chromosome_length)) # use uniform distribution to sample
@@ -73,6 +62,7 @@ def population_evaluation(x):
 def game_simulation(env, x):
     fitness, player_life, enemy_life, game_runtime = env.play(pcont=x) # enemy taking random actions
     return fitness
+
 # SAME AS IN CODE PROVIDED
 
 def parent_selection(population_size, mating_pool_size, pop, fit_pop, mating_tournament_sample_size):
@@ -93,8 +83,6 @@ def tournament_selection(pop, fit_pop, population_size, tournament_sample_size, 
         winner = 1000
         fit_winner = -1000
         for p in potential_parents:
-            print(p)
-            print(len(fit_pop))
             if fit_pop[p] > fit_winner:
                 fit_winner = fit_pop[p]
                 winner = pop[p]
@@ -116,10 +104,14 @@ def whole_arithmetic_recombination(parents, population_size, chromosome_length, 
     for i in range(0,population_size-1):
         parent1 = parents[random.randint(0,len(parents)-1)]
         parent2 = parents[random.randint(0,len(parents)-1)]
-        child1 = recombination_probability*parent1 + (1-recombination_probability)*parent2
-        child2 = recombination_probability*parent2 + (1-recombination_probability)*parent1
-        offspring.append(child1)
-        offspring.append(child2)
+        if np.random.uniform(0,1) <= recombination_probability:
+            child1 = recombination_scale*parent1 + (1-recombination_scale)*parent2
+            child2 = recombination_scale*parent2 + (1-recombination_scale)*parent1
+            offspring.append(child1)
+            offspring.append(child2)
+        else: 
+            offspring.append(parent1)
+            offspring.append(parent2)
     return offspring
 
 def mutation(offspring, mutation_probability, mutation_std):
@@ -159,11 +151,28 @@ def round_robin_tournament(pop, fit_pop, population_size, tournament_sample_size
 
 
 
+#last_best = 0
+# Set necessary parameters
+observation_space = env.get_num_sensors()
+bias = 1
+action_space = 5
+chromosome_length = (observation_space + bias)*hidden_notes + (hidden_notes + bias)*action_space
 
+# TO BE TUNED 
+generations = 10                    # lecturer mentioned >= 30
+population_size = 50                # change accordingly
 
-
-
-
+lower_bound_weights = -1            # change accordingly
+upper_bound_weights = 1             # change accordingly
+recombination_scale = 0.5
+# recombination_probability = 0.2     # change accordingly (before 0.5)
+# mutation_probability = 0.8          # change accordingly (before 0.1)
+recombination_probability = 0.5     # change accordingly (before 0.5)
+mutation_probability = 0.5          # change accordingly (before 0.2)
+mutation_std = 1                    # change accordingly
+mating_pool_size = 10               # goes in dependency with population_size
+mating_tournament_sample_size = 5   # the higher the higher the selection pressure
+survivor_tournament_sample_size = 10 # 10 typical value
 
 # COPIED!!!
 # loads file with the best solution for testing
@@ -231,16 +240,19 @@ for i in range(1,generations):
     offspring, parents, fit_parents = crossover(pop, population_size, recombination_probability, chromosome_length, mating_pool_size, fit_pop, mating_tournament_sample_size)
     offspring = mutation(offspring, mutation_probability, mutation_std)
     fit_offspring = population_evaluation(offspring)
+    
     # COPIED !!!
     # combine original population and offspring to gain new population for survivor selection
-    fit_pop = np.append(fit_pop,fit_offspring)
     pop = np.vstack((pop,offspring))
-    best = np.argmax(fit_pop) #best solution in generation
-    fit_pop[best] = float(population_evaluation(np.array([pop[best] ]))[0]) # repeats best eval, for stability issues
-    best_sol = fit_pop[best]
+    fit_pop = np.append(fit_pop,fit_offspring)
+    # best = np.argmax(fit_pop) #best solution in generation
+    # fit_pop[best] = float(population_evaluation(np.array([pop[best]]))[0]) # repeats best eval, for stability issues
+    # best_sol = fit_pop[best]
     # COPIED !!!
     pop, fit_pop = survivor_selection(pop, fit_pop, survivor_tournament_sample_size)
 
+    # recombination_probability += 0.05     # change accordingly (before 0.5)
+    # mutation_probability -= 0.05
 
     # COPIED !!!
     # searching new areas
@@ -294,5 +306,4 @@ file.close()
 env.state_to_log() # checks environment state
 # COPIED!!!
 
-
-
+# create figure
