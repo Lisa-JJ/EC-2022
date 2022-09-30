@@ -30,26 +30,29 @@ if headless:
 # COPIED!!!
 
 # experiment_name = 'EA2_dynamicCMrate_enemy1'
-experiment_name = 'tournament_wholeArithmetic_Nonuniform_roundRobin_enemy3'
+experiment_name = 'EA2_enemy8_check_run1'
 if not os.path.exists(experiment_name):
     os.makedirs(experiment_name)
 
 # For know using the neural network that is provided. NN: 1 hidden layer, consisting of 5 hidden notes.
-hidden_notes = 5
+hidden_notes = 10
+selection_operator = 'elitism' # 'non_elitism'
 
 # initializes environment with ai player using random controller, playing against static enemy
 # COPIED!!!
 env = Environment(experiment_name=experiment_name,
-                  enemies=[3],
+                  enemies=[8],
                   playermode="ai",
                   player_controller=player_controller(hidden_notes),
                   enemymode="static",
                   level=2,
-                  speed="fastest")
+                  speed="fastest",
+                  randomini='yes')
 
 env.state_to_log() # checks environment state
 ini = time.time()  # sets time marker
-run_mode = 'train'
+# run_mode = 'train'
+run_mode = 'test'
 # COPIED!!!
 
 # SAME AS IN CODE PROVIDED
@@ -91,12 +94,34 @@ def tournament_selection(pop, fit_pop, population_size, tournament_sample_size, 
         current_member += 1
     return pool, fit_pool 
 
-def crossover(pop, population_size, recombination_probability, chromosome_length, mating_pool_size, fit_pop, mating_tournament_sample_size):
+def crossover(pop, population_size, recombination_probability, chromosome_length, mating_pool_size, fit_pop, mating_tournament_sample_size, recombination_scale):
     # single arithmetic recombination
     alpha = recombination_probability
     parents, fit_parents = parent_selection(population_size, mating_pool_size, pop, fit_pop, mating_tournament_sample_size)
-    offspring = whole_arithmetic_recombination(parents, population_size, chromosome_length, recombination_probability)
+    offspring = single_arithmetic_recombination(parents, population_size, chromosome_length, recombination_probability)
+    # offspring = blend_recombination(parents, population_size, chromosome_length, recombination_probability, recombination_scale)
     return offspring, parents, fit_parents
+
+def blend_recombination(parents, population_size, chromosome_length, recombination_probability, recombination_scale):
+    offspring = []
+    for i in range(int(population_size*1.5)):
+        parent1 = parents[random.randint(0,len(parents)-1)]
+        parent2 = parents[random.randint(0,len(parents)-1)]
+        if np.random.uniform(0,1) <= recombination_probability:
+            gamma = ((1-(2*recombination_scale))*np.random.uniform(0,1))-recombination_scale
+            # child1 = [((1-gamma)*parent1[i]) + (gamma*parent2[i]) for i in range(chromosome_length)]
+            # child2 = [((1-gamma)*parent2[i]) + (gamma*parent1[i]) for i in range(chromosome_length)]
+            child1 = parent1
+            child2 = parent2
+            for i in range(0,chromosome_length):
+                child1[i] = ((1-gamma)*parent1[i]) + (gamma*parent2[i])
+                child2[i] = ((1-gamma)*parent2[i]) + (gamma*parent1[i])
+            offspring.append(child1)
+            offspring.append(child2)
+        else:
+            offspring.append(parent1)
+            offspring.append(parent2)
+    return offspring
 
 def whole_arithmetic_recombination(parents, population_size, chromosome_length, recombination_probability):
     offspring = []
@@ -114,13 +139,35 @@ def whole_arithmetic_recombination(parents, population_size, chromosome_length, 
             offspring.append(parent2)
     return offspring
 
+def single_arithmetic_recombination(parents, population_size, chromosome_length, recombination_probability):
+    offspring = []
+    # generates double the amount of offspring than population size
+    for i in range(0,population_size-1):
+        parent1 = parents[random.randint(0,len(parents)-1)]
+        parent2 = parents[random.randint(0,len(parents)-1)]
+        if np.random.uniform(0,1) <= recombination_probability:
+            k = random.randint(0,chromosome_length-1)
+            # child1 = recombination_scale*parent1 + (1-recombination_scale)*parent2
+            # child2 = recombination_scale*parent2 + (1-recombination_scale)*parent1
+            child1 = parent1
+            child2 = parent2
+            child1[k] = recombination_scale*parent1[k] + (1-recombination_scale)*parent2[k]
+            child2[k] = recombination_scale*parent2[k] + (1-recombination_scale)*parent1[k]
+            offspring.append(child1)
+            offspring.append(child2)
+        else: 
+            offspring.append(parent1)
+            offspring.append(parent2)
+    return offspring
+
 def mutation(offspring, mutation_probability, mutation_std):
     # nonuniform selection
     for i in range(0,len(offspring)):
-        for gene in range(0,len(offspring[i])):
-            if np.random.uniform(0,1) <= mutation_probability:
+        if np.random.uniform(0,1) <= mutation_probability:
+            for gene in range(0,len(offspring[i])):
                 # perform mutation
-                offspring[i][gene] = curtailing(offspring[i][gene]+np.random.normal(0,mutation_std))
+                if np.random.uniform(0,1) <= mutation_probability:
+                    offspring[i][gene] = curtailing(offspring[i][gene]+np.random.normal(0,mutation_std))
     return offspring
 
 def curtailing(gene):
@@ -131,8 +178,11 @@ def curtailing(gene):
     else:
         return gene
 
-def survivor_selection(pop, fit_pop, tournament_sample_size):
-    pop_new, fit_pop_new = round_robin_tournament(pop, fit_pop, population_size, tournament_sample_size)
+def survivor_selection(pop, fit_pop, tournament_sample_size, selection_operator):
+    if selection_operator == 'elitism':
+        pop_new, fit_pop_new = round_robin_tournament(pop, fit_pop, population_size, tournament_sample_size)
+    else:
+        pop_new, fit_pop_new = elitism(pop, fit_pop, population_size)
     return pop_new, fit_pop_new
 
 def round_robin_tournament(pop, fit_pop, population_size, tournament_sample_size):
@@ -147,6 +197,13 @@ def round_robin_tournament(pop, fit_pop, population_size, tournament_sample_size
     fit_pop_new = [fit_pop[i] for i in index_pop_new]
     return pop_new, fit_pop_new
 
+def elitism(pop, fit_pop, population_size):
+    pool = sorted(range(len(fit_pop)), key = lambda sub: fit_pop[sub])[-population_size:]
+    # pool = heapq.nlargest(population_size, zip(fit_pop, pop))
+    pop_new = [pop[p] for p in pool]
+    fit_pop_new = [fit_pop[p] for p in pool]
+    return pop_new, fit_pop_new
+
 
 
 
@@ -159,20 +216,20 @@ action_space = 5
 chromosome_length = (observation_space + bias)*hidden_notes + (hidden_notes + bias)*action_space
 
 # TO BE TUNED 
-generations = 10                    # lecturer mentioned >= 30
-population_size = 50                # change accordingly
+generations = 20                    # lecturer mentioned >= 30
+population_size = 100                # change accordingly
 
 lower_bound_weights = -1            # change accordingly
 upper_bound_weights = 1             # change accordingly
 recombination_scale = 0.5
 # recombination_probability = 0.2     # change accordingly (before 0.5)
 # mutation_probability = 0.8          # change accordingly (before 0.1)
-recombination_probability = 0.5     # change accordingly (before 0.5)
-mutation_probability = 0.5          # change accordingly (before 0.2)
-mutation_std = 1                    # change accordingly
-mating_pool_size = 10               # goes in dependency with population_size
+recombination_probability = 1     # change accordingly (before 0.5)
+mutation_probability = 0.2          # change accordingly (before 0.2)
+mutation_std = 0.01                    # change accordingly
+mating_pool_size = 50               # goes in dependency with population_size
 mating_tournament_sample_size = 5   # the higher the higher the selection pressure
-survivor_tournament_sample_size = 10 # 10 typical value
+survivor_tournament_sample_size = 5 # 10 typical value
 
 # COPIED!!!
 # loads file with the best solution for testing
@@ -180,8 +237,8 @@ if run_mode =='test':
 
     bsol = np.loadtxt(experiment_name+'/best.txt')
     print( '\n RUNNING SAVED BEST SOLUTION \n')
-    env.update_parameter('speed','normal')
-    evaluate([bsol])
+    # env.update_parameter('speed','normal')
+    population_evaluation([bsol])
 
     sys.exit(0)
 
@@ -224,6 +281,7 @@ print( '\n GENERATION '+str(ini_g)+' '+str(round(fit_pop[best],6))+' '+str(round
 file_aux.write('\n'+str(ini_g)+' '+str(round(fit_pop[best],6))+' '+str(round(mean,6))+' '+str(round(std,6))   )
 file_aux.close()
 # COPIED!!!
+# np.savetxt(experiment_name+'/best_init.txt',pop[best])
 
 
 
@@ -237,7 +295,7 @@ last_sol = fit_pop[best]
 notimproved = 0
 for i in range(1,generations):
     # parent selection in crossover
-    offspring, parents, fit_parents = crossover(pop, population_size, recombination_probability, chromosome_length, mating_pool_size, fit_pop, mating_tournament_sample_size)
+    offspring, parents, fit_parents = crossover(pop, population_size, recombination_probability, chromosome_length, mating_pool_size, fit_pop, mating_tournament_sample_size, recombination_scale)
     offspring = mutation(offspring, mutation_probability, mutation_std)
     fit_offspring = population_evaluation(offspring)
     
@@ -249,10 +307,10 @@ for i in range(1,generations):
     # fit_pop[best] = float(population_evaluation(np.array([pop[best]]))[0]) # repeats best eval, for stability issues
     # best_sol = fit_pop[best]
     # COPIED !!!
-    pop, fit_pop = survivor_selection(pop, fit_pop, survivor_tournament_sample_size)
+    pop, fit_pop = survivor_selection(pop, fit_pop, survivor_tournament_sample_size, selection_operator)
 
-    # recombination_probability += 0.05     # change accordingly (before 0.5)
-    # mutation_probability -= 0.05
+    # recombination_probability += 0.02     # change accordingly (before 0.5)
+    # mutation_probability -= 0.02
 
     # COPIED !!!
     # searching new areas
@@ -288,6 +346,7 @@ for i in range(1,generations):
     file_aux.close()
 
     # saves file with the best solution
+    # np.savetxt(experiment_name+'/best'+str(i)+'.txt',pop[best])
     np.savetxt(experiment_name+'/best.txt',pop[best])
 
     # saves simulation state
@@ -305,5 +364,3 @@ file.close()
 
 env.state_to_log() # checks environment state
 # COPIED!!!
-
-# create figure
