@@ -204,7 +204,7 @@ def elitism(pop, fit_pop, population_size):
 
 for run in range(1, 11):
     print("starting run " + str(run))
-    experiment_name = 'EA' + '1' if selection_operator == 'elitism' else '2' + ' _enemy' + str(enemy) + '_run' + str(run)
+    experiment_name = 'EA' + ('1' if selection_operator == 'elitism' else '2') + ' _enemy' + str(enemy) + '_run' + str(run)
     if not os.path.exists(experiment_name):
         os.makedirs(experiment_name)
 
